@@ -5,20 +5,7 @@ import math
 import numpy
 from shapely import geometry
 from functools import lru_cache
-
-VINCENTY_CONSTANT = (1 - 1 / 298.257223563) * 6371 * 1000
-
-
-def vincenty_distance(lat1, lon1, lat2, lon2):
-    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    )
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return c * VINCENTY_CONSTANT
+from geopy.distance import distance
 
 
 class Grid(geopandas.geodataframe.GeoDataFrame):
@@ -41,13 +28,13 @@ class Grid(geopandas.geodataframe.GeoDataFrame):
 
         self.origin = (min_latitude, min_longitude)
 
-        distance_lon_max = vincenty_distance(
-            min_latitude, min_longitude, min_latitude, max_longitude
-        )
+        distance_lon_max = distance(
+            (min_latitude, min_longitude), (min_latitude, max_longitude)
+        ).m
         n_x = math.ceil(distance_lon_max / max_side_length_meter) + 1
-        distance_lat_max = vincenty_distance(
-            min_latitude, min_longitude, max_latitude, min_longitude
-        )
+        distance_lat_max = distance(
+        (min_latitude, min_longitude), (max_latitude, min_longitude)
+        ).m
         n_y = math.ceil(distance_lat_max / max_side_length_meter) + 1
         X = numpy.linspace(min_longitude, max_longitude, n_x, endpoint=True)
         Y = numpy.linspace(min_latitude, max_latitude, n_y, endpoint=True)
@@ -101,7 +88,7 @@ class Grid(geopandas.geodataframe.GeoDataFrame):
         window = self.geodataframe.loc[indices]
         centroids = window.to_crs(window.estimate_utm_crs()).centroid.to_crs(epsg=4326)
         for (i, j), distance in centroids.apply(
-            lambda _: vincenty_distance(latitude, longitude, _.y, _.x)
+            lambda _: distance((latitude, longitude),( _.y, _.x)).m
         ).items():
             if distance < max_distance_meters:
                 yield (i, j, distance)
@@ -128,17 +115,18 @@ class DynamicGrid(geopandas.geodataframe.GeoDataFrame):
 
         self.origin = (min_latitude, min_longitude)
 
-        distance_lon_max = vincenty_distance(
-            min_latitude, min_longitude, min_latitude, max_longitude
-        )
-        n_x = math.ceil(distance_lon_max / max_side_length_meter) + 1
-        distance_lat_max = vincenty_distance(
-            min_latitude, min_longitude, max_latitude, min_longitude
-        )
-        n_y = math.ceil(distance_lat_max / max_side_length_meter) + 1
+        distance_lon_max = distance(
+            (min_latitude, min_longitude), (min_latitude, max_longitude)
+        ).m
+        print(distance_lon_max)
+        n_x = math.ceil(distance_lon_max / max_side_length_meter)
+        distance_lat_max = distance(
+            (min_latitude, min_longitude), (max_latitude, min_longitude)
+        ).m
+        n_y = math.ceil(distance_lat_max / max_side_length_meter)
 
-        self.cell_width_degrees = (max_longitude - min_longitude) / (n_x - 1)
-        self.cell_height_degrees = (max_latitude - min_latitude) / (n_y - 1)
+        self.cell_width_degrees = (max_longitude - min_longitude) / (n_x)
+        self.cell_height_degrees = (max_latitude - min_latitude) / (n_y)
         (self.I, self.J) = self.index_of(max_latitude, max_longitude)
         
         self.cell_at = lru_cache(maxsize=1000)(self.__cell_at)
@@ -173,18 +161,18 @@ class DynamicGrid(geopandas.geodataframe.GeoDataFrame):
         boudaries_center = center_cell["geometry"].exterior.coords.xy
         boundaries_above = cell_above["geometry"].exterior.coords.xy
         boundaries_right = cell_right["geometry"].exterior.coords.xy
-        d_y = vincenty_distance(
-            boudaries_center[1][0],
-            boudaries_center[0][0],
-            boundaries_above[1][0],
-            boundaries_above[0][0],
-        )
-        d_x = vincenty_distance(
-            boudaries_center[1][0],
-            boudaries_center[0][0],
-            boundaries_right[1][0],
-            boundaries_right[0][0],
-        )
+        d_y = distance(
+            (boudaries_center[1][0],
+            boudaries_center[0][0]),
+            (boundaries_above[1][0],
+            boundaries_above[0][0]),
+        ).m
+        d_x = distance(
+            (boudaries_center[1][0],
+            boudaries_center[0][0]),
+            (boundaries_right[1][0],
+            boundaries_right[0][0]),
+        ).m
         d_i = math.ceil(max_distance_meters / d_x)
         d_j = math.ceil(max_distance_meters / d_y)
         window = (
@@ -200,7 +188,7 @@ class DynamicGrid(geopandas.geodataframe.GeoDataFrame):
         selection = geopandas.GeoDataFrame(
             {"i": i, "j": j, "distance": distance}
             for ((i, j), distance) in centroids.apply(
-                lambda _: vincenty_distance(latitude, longitude, _.y, _.x)
+                lambda _: distance((latitude, longitude), (_.y, _.x)).m
             ).items()
             if distance < max_distance_meters
         ).set_index((["i", "j"]))
