@@ -118,7 +118,6 @@ class DynamicGrid(geopandas.geodataframe.GeoDataFrame):
         distance_lon_max = distance(
             (min_latitude, min_longitude), (min_latitude, max_longitude)
         ).m
-        print(distance_lon_max)
         n_x = math.ceil(distance_lon_max / max_side_length_meter)
         distance_lat_max = distance(
             (min_latitude, min_longitude), (max_latitude, min_longitude)
